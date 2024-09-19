@@ -17,7 +17,8 @@ install.packages(c("ROOPSD", "lubridate", "dplyr", "ggplot2", "trend", "readxl",
 1) Clone the repository:
 
 git clone https://github.com/SoleCollazo/Non-stationary-GEV.git
-cd NSGEV-analysis
+
+cd Non-stationary-GEV
 
 2) Prepare your data:
 
