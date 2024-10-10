@@ -11,7 +11,7 @@ This repository contains an R script, NSGEV_rio.R, which performs an analysis us
 ### Prerequisites
 Before running the script, make sure you have the following dependencies installed in your R environment:
 
-install.packages(c("ROOPSD", "lubridate", "dplyr", "ggplot2", "trend", "readxl", "scales", "pals"))
+install.packages(c("ROOPSD", "lubridate", "dplyr", "ggplot2", "trend", "readxl", "scales", "pals", "ismev"))
 
 ### Usage
 1) Clone the repository:
