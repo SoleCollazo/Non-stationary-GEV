@@ -2,10 +2,9 @@
 rm(list=ls())
 
 # Install required packages (commented out if already installed)
-# install.packages(c("ROOPSD", "lubridate", "dplyr", "ggplot2", "trend", "readxl", "scales", "pals"))
+# install.packages(c( "lubridate", "dplyr", "ggplot2", "trend", "readxl", "scales", "pals", "ismev","ROOPSD"))
 
 # Load necessary libraries
-library(ROOPSD)
 library(lubridate)
 library(dplyr)
 library(ggplot2)
@@ -13,6 +12,8 @@ library(trend)
 library(readxl)
 library(scales)
 library(pals)
+library(ismev)
+library(ROOPSD)
 
 ######## Functions ########
 
@@ -100,7 +101,7 @@ boot_return_time_calc <- function(data_t, n_boot, EN3_4, GWL, TXx) {
   # Initialize an empty vector to store return times from each bootstrap iteration
   boot_return_times <- numeric(n_boot)
   
-  set.seed(123)  # Set seed for reproducibility
+  set.seed(1)  # Set seed for reproducibility
   
   for (i in 1:n_boot) {
     
@@ -108,20 +109,16 @@ boot_return_time_calc <- function(data_t, n_boot, EN3_4, GWL, TXx) {
     boot_indices <- sample(1:nrow(data_t), replace = TRUE)
     data_boot <- data_t[boot_indices, ]
     
-    # Step 2: Fit a linear model with ENSO and GWI as predictors
-    # The model predicts maximum temperature (tx) based on ENSO index and GWI
-    model_loc_multi <- lm(tx ~ en3.4 + gwi, data = data_boot)
-    loc_lm_multi <- predict(model_loc_multi)
     
-    # Step 3: Fit a non-stationary GEV model to the residuals (difference between observed and predicted temperature)
-    gev_NS_multi <- ROOPSD::GEV$new()$fit(data_boot$tx - loc_lm_multi)
+    # Step 2: Fit a non-stationary GEV model to the residuals (difference between observed and predicted temperature)
+    gev_NS_multi <- gev.fit(xdat = data_boot$tx, ydat = as.matrix(cbind(data_boot$en3.4, data_boot$gwi)), mul = c(1,2),show=F)
     
-    # Step 4: Extract the model coefficients and GEV parameters
-    coef_BE_boot <- c(model_loc_multi$coefficients[1] + gev_NS_multi$loc, 
-                      model_loc_multi$coefficients[2], 
-                      model_loc_multi$coefficients[3], 
-                      gev_NS_multi$scale, 
-                      gev_NS_multi$shape)
+    # Step 3: Extract the model coefficients and GEV parameters
+    coef_BE_boot <- c(gev_NS_multi$mle[1], 
+                      gev_NS_multi$mle[2], 
+                      gev_NS_multi$mle[3], 
+                      gev_NS_multi$mle[4], 
+                      gev_NS_multi$mle[5])
     
     # Assign meaningful names to the coefficients
     names(coef_BE_boot) <- c("loc0", "loc1_enso", "loc2_gwi", "scale0", "shape0")
@@ -140,6 +137,8 @@ boot_return_time_calc <- function(data_t, n_boot, EN3_4, GWL, TXx) {
   # Return the vector of bootstrapped return times
   return(boot_return_times)
 }
+
+
 # Function to perform bootstrap sampling and return time calculation for multiple return levels.
 # This function estimates return times for various return levels based on a non-stationary Generalized Extreme Value (GEV) distribution model.
 #
@@ -166,7 +165,7 @@ boot_return_time_calc_RL <- function(data_t, n_boot, EN3_4, GWL, RL) {
   # Initialize an empty matrix to store return times for each bootstrap iteration and return level
   boot_return_times <- matrix(NA, nrow = n_boot, ncol = length(RL))
   
-  set.seed(123)  # Set seed for reproducibility
+  set.seed(1)  # Set seed for reproducibility
   
   for (i in 1:n_boot) {
     
@@ -174,20 +173,16 @@ boot_return_time_calc_RL <- function(data_t, n_boot, EN3_4, GWL, RL) {
     boot_indices <- sample(1:nrow(data_t), replace = TRUE)
     data_boot <- data_t[boot_indices, ]
     
-    # Step 2: Fit a linear model with ENSO and GWI as predictors
-    # The model predicts maximum temperature (tx) based on ENSO index and GWI
-    model_loc_multi <- lm(tx ~ en3.4 + gwi, data = data_boot)
-    loc_lm_multi <- predict(model_loc_multi)
+    # Step 2: Fit a non-stationary GEV model to the residuals (difference between observed and predicted temperature)
+    gev_NS_multi <- gev.fit(xdat = data_boot$tx, ydat = as.matrix(cbind(data_boot$en3.4, data_boot$gwi)), mul = c(1,2),show=F)
     
-    # Step 3: Fit a non-stationary GEV model to the residuals (observed temperature minus predicted location)
-    gev_NS_multi <- ROOPSD::GEV$new()$fit(data_boot$tx - loc_lm_multi)
+    # Step 3: Extract the model coefficients and GEV parameters
+    coef_BE_boot <- c(gev_NS_multi$mle[1], 
+                      gev_NS_multi$mle[2], 
+                      gev_NS_multi$mle[3], 
+                      gev_NS_multi$mle[4], 
+                      gev_NS_multi$mle[5])
     
-    # Step 4: Extract the model coefficients and GEV parameters
-    coef_BE_boot <- c(model_loc_multi$coefficients[1] + gev_NS_multi$loc, 
-                      model_loc_multi$coefficients[2], 
-                      model_loc_multi$coefficients[3], 
-                      gev_NS_multi$scale, 
-                      gev_NS_multi$shape)
     
     # Assign meaningful names to the coefficients
     names(coef_BE_boot) <- c("loc0", "loc1_enso", "loc2_gwi", "scale0", "shape0")
@@ -329,6 +324,14 @@ for (i in 1:length(code)){
   
   data_en<-max_anual_en[,c(1:3)]
   
+  # Correlation between TXx and EN3.4
+  # Detrending variables
+  txx_det <- lm(data_en$tx ~ seq(1,nrow(data_en)))$residuals
+  
+  en_det <- lm(data_en$en3.4 ~ seq(1,nrow(data_en)))$residuals
+  
+  cor.test(txx_det, en_det, method = 'spearman')
+  
   
   # Data frame with the two covariables
   
@@ -381,14 +384,30 @@ for (i in 1:length(code)){
   
   # Stationary
   
-  gev_S <- ROOPSD::GEV$new()$fit(data$valor_maximo_anual)
-  gev_S$diagnostic(data$valor_maximo_anual)
+  gev_S <- gev.fit(data$valor_maximo_anual)
+  gev.diag(gev_S)
   
   # Kolmogorov-Smirnov test
-  gev_S$ks.test
+
+  # Extract the parameters of the fitted GEV distribution
+  shape <- gev_S$mle[3]  # Shape parameter
+  scale <- gev_S$mle[2]  # Scale parameter
+  location <- gev_S$mle[1]  # Location parameter
+  
+  # Compute the theoretical CDF for each observed value in the data
+  gev_cdf <- pgev(data$valor_maximo_anual, loc = location, scale = scale, shape = shape)
+  
+  # Kolmogorov-Smirnov test
+  ks_result <- ks.test(data$valor_maximo_anual, "pgev", loc = location, scale = scale, shape = shape)
+  print(ks_result)
+  
+  
   
   # Return period in the stationary model
-  pF_S_2023 <- gev_S$sf(max(dat_station))
+  anio.max<- which(year(data_t$fecha) == 2023)
+  TXx2023<-data_t$tx[anio.max]
+  
+  pF_S_2023 <- pgev(TXx2023, loc = location, scale = scale, shape = shape, lower.tail = FALSE )
   Rt_F_S_2023 <- 1. / pF_S_2023
   cat(paste("Return time (2023):", round(Rt_F_S_2023, 2), "year"), end = "\n")
   
@@ -396,45 +415,41 @@ for (i in 1:length(code)){
   # Non-stationary
   
   # 1) Covariable: GWI
-  model_loc_gwi <- lm("valor_maximo_anual ~ gwi", data = data)
-  loc_lm_gwi <- predict(model_loc_gwi)
-  print(summary(model_loc_gwi)) 
+  gev_NS_gwi = gev.fit(xdat=data$valor_maximo_anual,ydat=as.matrix(data$gwi),mul=1)
   
-  gev_NS_gwi <- ROOPSD::GEV$new()$fit(data$valor_maximo_anual - loc_lm_gwi)
-  print(gev_NS_gwi$loc)
+  loc = gev_NS_gwi$mle[1] + gev_NS_gwi$mle[2] * data$gwi
   
-  gev_NS_gwi$diagnostic(data$valor_maximo_anual - loc_lm_gwi)
+  scale = gev_NS_gwi$mle[3]
   
-  # Kolmogorov-Smirnov test
-  gev_NS_gwi$ks.test
+  shape = gev_NS_gwi$mle[4]
+  
+  gev.diag(gev_NS_gwi)
   
   
   # 2) Covariable: EN3.4
-  model_loc_enso = lm( " tx ~ en3.4" , data = data_en )
-  loc_lm_enso = predict(model_loc_enso)
-  print(summary(model_loc_enso)) 
+
+  gev_NS_enso <- gev.fit(xdat = data_en$tx, ydat = as.matrix(data_en$en3.4), mul = 1)
   
-  gev_NS_enso = ROOPSD::GEV$new()$fit( data_en$tx - loc_lm_enso )
-  print(gev_NS_enso$loc)
+  loc = gev_NS_enso$mle[1] + gev_NS_enso$mle[2] * data_en$en3.4
   
-  gev_NS_enso$diagnostic( data_en$tx - loc_lm_enso)
+  scale = gev_NS_enso$mle[3]
   
-  # Kolmogorov-Smirnov test
-  gev_NS_enso$ks.test
+  shape = gev_NS_enso$mle[4]
+  
+  gev.diag(gev_NS_enso)
   
   
   # 3) Covariables: GWI and EN3.4
-  model_loc_multi = lm( " tx ~ en3.4 + gwi" , data = data_t )
-  loc_lm_multi = predict(model_loc_multi)
-  print(summary(model_loc_multi)) 
   
-  gev_NS_multi = ROOPSD::GEV$new()$fit( data_t$tx - loc_lm_multi )
-  print(gev_NS_multi$loc)
+  gev_NS_multi = gev.fit(xdat = data_t$tx, ydat = as.matrix(cbind(data_t$en3.4, data_t$gwi)), mul = c(1,2))
   
-  gev_NS_multi$diagnostic( data_en$tx - loc_lm_multi)
+  loc = gev_NS_multi$mle[1] + gev_NS_multi$mle[2] * data_t$en3.4 + gev_NS_multi$mle[3] * data_t$gwi
   
-  # Kolmogorov-Smirnov test
-  gev_NS_multi$ks.test
+  scale = gev_NS_enso$mle[3]
+  
+  shape = gev_NS_enso$mle[4]
+  
+  gev.diag(gev_NS_enso)
   
   
   ######################## Comparison of GEV models #############################################
@@ -445,8 +460,8 @@ for (i in 1:length(code)){
   
   alpha <- seq(0.01, 0.3, 0.01)
   
-  lll_S <- sum(gev_S$logdensity(data$valor_maximo_anual))
-  lll_NS_gwi <- sum(gev_NS_gwi$logdensity(data$valor_maximo_anual - loc_lm_gwi))
+  lll_S <- -gev_S$nllh
+  lll_NS_gwi <- -gev_NS_gwi$nllh
   
   reject_S <- 2 * (lll_NS_gwi - lll_S) > qchisq(1 - alpha, df = 1)
   par(mfrow=c(1,1))
@@ -456,7 +471,7 @@ for (i in 1:length(code)){
   
   # Stationary vs. Non-stationary EN3.4
   
-  lll_NS_enso  = sum(gev_NS_enso$logdensity(data_en$tx-loc_lm_enso))
+  lll_NS_enso  = - gev_NS_enso$nllh
   
   reject_S = 2 * (lll_NS_enso - lll_S) > qchisq( 1 - alpha , df = 1 )
   par(mfrow=c(1,1))
@@ -478,7 +493,7 @@ for (i in 1:length(code)){
   
   # Stationary vs. Non-stationary multi
   
-  lll_NS_multi  = sum(gev_NS_multi$logdensity(data_t$tx-loc_lm_multi))
+  lll_NS_multi  = - gev_NS_multi$nllh
   
   reject_S = 2 * (lll_NS_multi - lll_S) > qchisq( 1 - alpha , df = 1 )
   par(mfrow=c(1,1))
@@ -530,9 +545,27 @@ for (i in 1:length(code)){
   print(AIC_station_df)
   
   
+  ## BIC
+  
+  # Number of Data Points (N), assuming it's the same for all models
+  N <- length(data$valor_maximo_anual)
+  
+  # Calculation of BIC for Each Model
+  BIC_station <- -2 * LL_station + log(N) * n_param
+  
+  # Create a data frame with column names
+  BIC_station_df <- data.frame(
+    Model = c('S', 'EN3.4', 'GWI', 'multi'),
+    BIC = BIC_station
+  )
+  
+  # Print the data frame
+  print(BIC_station_df)
+  
+  
   ##################################### Coefficients of the NSGEV multi #########################################
   
-  coef_BE = base::c( model_loc_multi$coefficients[1] + gev_NS_multi$loc , model_loc_multi$coefficients[2], model_loc_multi$coefficients[3] , gev_NS_multi$scale , gev_NS_multi$shape )
+  coef_BE = base::c( gev_NS_multi$mle[1], gev_NS_multi$mle[2], gev_NS_multi$mle[3] , gev_NS_multi$mle[4] , gev_NS_multi$mle[5] )
   names(coef_BE) = base::c( "loc0" , "loc1_enso" , "loc2_gwi", "scale0" , "shape0" )
   print(coef_BE)
   
@@ -540,9 +573,10 @@ for (i in 1:length(code)){
   coef_station<-coef_BE
   
   # Function parameters
+  int <- coef_BE[1]    # Intercept term
   beta1 <- coef_BE[2]  # Coefficient for en3.4
   beta2 <- coef_BE[3]  # Coefficient for gwi
-  int <- coef_BE[1]    # Intercept term
+
   
   scale <- coef_BE[4]  # Scale parameter
   shape <- coef_BE[5]  # Shape parameter
@@ -614,9 +648,6 @@ for (i in 1:length(code)){
   
   
   ################################## Return period ##################################################
-  
-  anio.max<- nrow(data_t)
-  TXx2023 <- data_t$tx[anio.max]
   
   ### Pre-industrial climate
   
@@ -694,9 +725,9 @@ for (i in 1:length(code)){
   points(resul$y ~ resul$x, cex=0.5, pch=16)
   
   
-  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5))
+  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5[is.finite(percentil_5)]))
   
-  y_points <- c(RL[is.finite(percentil_95)],rev(RL))
+  y_points <- c(RL[is.finite(percentil_95)],rev(RL[is.finite(percentil_5)]))
   
   
   polygon(x_points, y_points, col=rgb(0.5, 0.5, 0.5, alpha=0.3), border=NA)
@@ -773,9 +804,9 @@ for (i in 1:length(code)){
   points(resul$y ~ resul$x, cex=0.5, pch=16,col='blue')
   
   
-  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5))
+  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5[is.finite(percentil_5)]))
   
-  y_points <- c(RL[is.finite(percentil_95)],rev(RL))
+  y_points <- c(RL[is.finite(percentil_95)],rev(RL[is.finite(percentil_5)]))
   
   polygon(x_points, y_points, col=rgb(0, 0, 1, alpha=0.3), border=NA)
   
@@ -847,9 +878,9 @@ for (i in 1:length(code)){
   
   points(resul$y ~ resul$x, cex=0.5, pch=16, col='magenta')
   
-  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5))
+  x_points <- c(percentil_95[is.finite(percentil_95)], rev(percentil_5[is.finite(percentil_5)]))
   
-  y_points <- c(RL[is.finite(percentil_95)],rev(RL))
+  y_points <- c(RL[is.finite(percentil_95)],rev(RL[is.finite(percentil_5)]))
   
   polygon(x_points, y_points, col=rgb(1, 0.41, 0.71, alpha=0.3), border=NA)
   
@@ -863,9 +894,10 @@ for (i in 1:length(code)){
   # 2-dimensional Return period
   
   # Parameters of the function
+  beta0 <- coef_BE[1] # Independent term
   beta1 <- coef_BE[2] # Coefficient for x1: en3.4
   beta2 <- coef_BE[3] # Coefficient for x2:gwi
-  beta0 <- coef_BE[1] # Independent term
+
   
   # Define the range of values for x1 and x2
   en3.4_values <- seq(-2.5, 2.5, length.out = 1000) # From 0 to 10 with 5 points
